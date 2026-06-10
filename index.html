@@ -1,172 +1,104 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Stream</title>
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { width: 100%; height: 100%; background: #000; font-family: system-ui, sans-serif; color: #fff; overflow: hidden; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Premium Stream Embed</title>
 
-#loader {
-  position: fixed; inset: 0; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 28px; background: #000;
-}
-#loader-bg {
-  position: absolute; inset: 0;
-  background-size: cover; background-position: center;
-  transition: opacity .6s ease; opacity: 0;
-}
-.spinner {
-  position: relative; z-index: 1;
-  width: 72px; height: 72px;
-  border: 5px solid rgba(255,255,255,.15);
-  border-top-color: #fff; border-radius: 50%;
-  animation: spin .9s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-#loader-text { position: relative; z-index: 1; font-size: .95rem; color: rgba(255,255,255,.6); letter-spacing: .04em; text-shadow: 0 1px 4px #000; }
+  <link rel="stylesheet" href="https://cdn.vidstack.io/player/theme.css" />
+  <link rel="stylesheet" href="https://cdn.vidstack.io/player/video.css" />
 
-#player { position: fixed; inset: 0; display: none; background: #000; }
-video { width: 100%; height: 100%; display: block; }
+  <script type="module" src="https://cdn.vidstack.io/player"></script>
 
-#usage {
-  position: fixed; inset: 0; display: none; flex-direction: column;
-  align-items: center; justify-content: center; text-align: center;
-  background: #000; gap: 10px;
-}
-#usage p { font-size: 1.05rem; color: rgba(255,255,255,.65); line-height: 2; }
+  <style>
+    /* Reset and make player full viewport */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
 
-#err {
-  position: fixed; inset: 0; display: none; flex-direction: column;
-  align-items: center; justify-content: center; text-align: center; background: #000;
-}
-#err-title { font-size: 2.4rem; font-weight: 700; color: #fff; margin-bottom: 18px; }
-#err-link { font-size: 1.1rem; color: #60a5fa; text-decoration: underline; cursor: pointer; }
-#err-link:hover { color: #93c5fd; }
-#err-detail {
-  position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
-  font-size: .78rem; color: rgba(255,255,255,.35); white-space: nowrap;
-  max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
-}
-</style>
+    media-player {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      
+      /* --- UI THEME MATCHING (From your screenshots) --- */
+      /* Change the primary brand/progress bar color to match your thin yellow tracker */
+      --media-brand: #f5c518; 
+      --media-focus-ring: 0 0 0 3px rgba(245, 197, 24, 0.5);
+    }
+
+    /* Keep video inside bounds */
+    media-provider {
+      background-color: #000;
+    }
+
+    /* Optional: Custom styling for text tracks/subtitles to match look */
+    media-captions {
+      margin-bottom: 20px;
+      font-size: 1.2rem;
+      text-shadow: 0px 2px 4px rgba(0,0,0,0.8);
+    }
+  </style>
 </head>
 <body>
 
-<div id="loader">
-  <div id="loader-bg"></div>
-  <div class="spinner"></div>
-  <div id="loader-text">Loading stream...</div>
-</div>
+  <media-player id="embed-player" playsinline>
+    <media-provider></media-provider>
+    
+    <media-video-layout></media-video-layout>
+  </media-player>
 
-<div id="usage">
-  <p>
-    <span style="color:#fff;font-size:1.2rem">Stream</span><br><br>
-    <code style="color:rgba(255,255,255,.8)">?id=550</code> &nbsp;— movie<br>
-    <code style="color:rgba(255,255,255,.8)">?id=456&amp;s=1&amp;e=1</code> &nbsp;— TV episode
-  </p>
-</div>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const player = document.querySelector('#embed-player');
 
-<div id="err">
-  <div id="err-title">Error Occurred</div>
-  <a id="err-link" href="#">Try vidsrc.xyz instead?</a>
-  <div id="err-detail"></div>
-</div>
+      // Helper function to extract URL parameters if your embed uses them (e.g., embed.html?id=abc)
+      function getQueryParam(param) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(param);
+      }
 
-<div id="player">
-  <video id="v" controls autoplay playsinline></video>
-</div>
+      // Automatically fetch stream data from your backend serverless route (api/index.js)
+      async function initializePlayback() {
+        try {
+          const streamId = getQueryParam('id') || ''; 
+          
+          // Call your serverless Vercel function
+          const response = await fetch(`/api/index${streamId ? `?id=${streamId}` : ''}`);
+          if (!response.ok) throw new Error('Network response from stream API failed');
+          
+          const data = await response.json();
 
-<script>
-var TMDB_KEY = '3a73619bbb8fc6d47742d1b5b2b707b5';
+          // Make sure your backend json output contains the direct path to the .m3u8 file
+          const streamUrl = data.url || data.m3u8 || data.stream; 
 
-var MESSAGES = [
-  'Loading stream...', 'Contacting the mothership...', 'Bribing the servers...',
-  'Untangling the cables...', 'Asking nicely...', 'Decoding the matrix...',
-  'Warming up the hamsters...', 'Negotiating with the cloud...', 'Almost there...',
-  'Convincing pixels to move...', 'Poking the API...', 'Summoning bandwidth...',
-  'Greasing the pipes...', 'Waking up the interns...', 'Stealing the stream (legally)...'
-];
-var msgEl = document.getElementById('loader-text');
-var msgIdx = 0;
-var msgTimer = setInterval(function() {
-  msgIdx = (msgIdx + 1) % MESSAGES.length;
-  msgEl.textContent = MESSAGES[msgIdx];
-}, 2200);
+          if (streamUrl) {
+            // Assign source directly to Vidstack. It will auto-detect HLS and boot up hls.js internally
+            player.src = {
+              src: streamUrl,
+              type: 'application/x-mpegURL'
+            };
+          } else {
+            console.error("API did not return a valid stream URL key.");
+          }
 
-var p = new URLSearchParams(location.search);
-var id = p.get('id'), s = p.get('s'), e = p.get('e');
+        } catch (error) {
+          console.error("Failed to load backend stream data from API:", error);
+        }
+      }
 
-function showPlayer() {
-  clearInterval(msgTimer);
-  document.getElementById('loader').style.display = 'none';
-  document.getElementById('player').style.display = 'block';
-}
-
-function showErr(msg) {
-  clearInterval(msgTimer);
-  document.getElementById('loader').style.display = 'none';
-  document.getElementById('err').style.display = 'flex';
-  document.getElementById('err-detail').textContent = msg || '';
-  var vidsrcUrl = s
-    ? 'https://vidsrc.xyz/embed/tv?tmdb=' + id + '&season=' + s + '&episode=' + (e || '1')
-    : 'https://vidsrc.xyz/embed/movie?tmdb=' + id;
-  document.getElementById('err-link').href = vidsrcUrl;
-}
-
-function loadBackdrop(id, isTv) {
-  var type = isTv ? 'tv' : 'movie';
-  fetch('https://api.themoviedb.org/3/' + type + '/' + id + '?api_key=' + TMDB_KEY)
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      var img = d.backdrop_path || d.poster_path;
-      if (!img) return;
-      var url = 'https://wsrv.nl/?url=' + encodeURIComponent('https://image.tmdb.org/t/p/w1280' + img) + '&bg=black&blur=3';
-      var bg = document.getElementById('loader-bg');
-      var preload = new Image();
-      preload.onload = function() { bg.style.backgroundImage = 'url(' + url + ')'; bg.style.opacity = '1'; };
-      preload.src = url;
-    })
-    .catch(function() {});
-}
-
-if (!id) {
-  clearInterval(msgTimer);
-  document.getElementById('loader').style.display = 'none';
-  document.getElementById('usage').style.display = 'flex';
-} else {
-  loadBackdrop(id, !!s);
-  var api = '/api?' + (s ? 'id='+id+'&s='+s+'&e='+(e||'1') : 'id='+id);
-  fetch(api)
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.error) return showErr(d.error);
-      play(d.url);
-    })
-    .catch(function(err) { showErr(err.message); });
-}
-
-function play(rawUrl) {
-  var src = '/api?url=' + encodeURIComponent(rawUrl);
-  var v = document.getElementById('v');
-  if (Hls.isSupported()) {
-    var hls = new Hls({ enableWorker: true });
-    hls.loadSource(src);
-    hls.attachMedia(v);
-    hls.on(Hls.Events.MANIFEST_PARSED, function() {
-      showPlayer();
-      v.play().catch(function(){});
+      // Wait until the player core engine is ready before firing the source injection
+      player.addEventListener('provider-change', (event) => {
+        initializePlayback();
+      });
     });
-    hls.on(Hls.Events.ERROR, function(_, d) {
-      if (d.fatal) showErr(d.details || 'HLS fatal error');
-    });
-  } else {
-    v.src = src;
-    v.addEventListener('canplay', showPlayer, { once: true });
-    v.play().catch(function(err) { showErr(err.message); });
-  }
-}
-</script>
+  </script>
+
 </body>
 </html>
