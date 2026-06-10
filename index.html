@@ -11,7 +11,6 @@
   <script type="module" src="https://cdn.vidstack.io/player"></script>
 
   <style>
-    /* Reset and make player full viewport */
     html, body {
       margin: 0;
       padding: 0;
@@ -19,83 +18,101 @@
       height: 100%;
       background-color: #000;
       overflow: hidden;
-      font-family: sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
     }
 
     media-player {
       width: 100vw;
       height: 100vh;
-      overflow: hidden;
+      background-color: #000;
       
-      /* --- UI THEME MATCHING (From your screenshots) --- */
-      /* Change the primary brand/progress bar color to match your thin yellow tracker */
-      --media-brand: #f5c518; 
+      /* Match the look from your screenshots */
+      --media-brand: #f5c518; /* Thin golden-yellow track accent */
       --media-focus-ring: 0 0 0 3px rgba(245, 197, 24, 0.5);
     }
 
-    /* Keep video inside bounds */
     media-provider {
       background-color: #000;
     }
 
-    /* Optional: Custom styling for text tracks/subtitles to match look */
-    media-captions {
-      margin-bottom: 20px;
-      font-size: 1.2rem;
-      text-shadow: 0px 2px 4px rgba(0,0,0,0.8);
+    #error-display {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      color: #ff4a4a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      z-index: 99;
+      display: none;
+      padding: 20px;
+      text-align: center;
     }
   </style>
 </head>
 <body>
 
-  <media-player id="embed-player" playsinline>
+  <div id="error-display"></div>
+
+  <media-player id="v" playsinline crossorigin>
     <media-provider></media-provider>
-    
     <media-video-layout></media-video-layout>
   </media-player>
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      const player = document.querySelector('#embed-player');
+      const player = document.querySelector('#v');
+      const errorDisplay = document.getElementById('error-display');
 
-      // Helper function to extract URL parameters if your embed uses them (e.g., embed.html?id=abc)
-      function getQueryParam(param) {
-        const urlParams = new URLSearchParams(window.location.search);
-        return urlParams.get(param);
+      function showErr(msg) {
+        errorDisplay.textContent = msg;
+        errorDisplay.style.display = 'flex';
       }
 
-      // Automatically fetch stream data from your backend serverless route (api/index.js)
-      async function initializePlayback() {
+      // 1. Parse incoming parameters exactly like your old player setup did
+      const urlParams = new URLSearchParams(window.location.search);
+      const id = urlParams.get('id');
+      const s  = urlParams.get('s');
+      const e  = urlParams.get('e');
+
+      if (!id) {
+        showErr("No stream ID specified. Usage: ?id=XYZ or ?id=XYZ&s=1&e=1");
+        return;
+      }
+
+      // 2. Build backend query mirroring your original app architecture
+      const apiEndpoint = '/api?' + (s ? 'id=' + id + '&s=' + s + '&e=' + (e || '1') : 'id=' + id);
+
+      // 3. Fetch stream lookup data and bind securely through proxy wrapper
+      async function loadStream() {
         try {
-          const streamId = getQueryParam('id') || ''; 
-          
-          // Call your serverless Vercel function
-          const response = await fetch(`/api/index${streamId ? `?id=${streamId}` : ''}`);
-          if (!response.ok) throw new Error('Network response from stream API failed');
+          const response = await fetch(apiEndpoint);
+          if (!response.ok) throw new Error('Failed to retrieve data from API stream lookup');
           
           const data = await response.json();
+          if (data.error) return showErr(data.error);
 
-          // Make sure your backend json output contains the direct path to the .m3u8 file
-          const streamUrl = data.url || data.m3u8 || data.stream; 
+          if (data.url) {
+            // CRITICAL: Must routing through your backend proxy url wrapper to clear CORS blocks
+            const proxiedSrc = '/api?url=' + encodeURIComponent(data.url);
 
-          if (streamUrl) {
-            // Assign source directly to Vidstack. It will auto-detect HLS and boot up hls.js internally
+            // Set the source configuration directly inside Vidstack
             player.src = {
-              src: streamUrl,
+              src: proxiedSrc,
               type: 'application/x-mpegURL'
             };
           } else {
-            console.error("API did not return a valid stream URL key.");
+            showErr("The backend API route did not return a valid stream stream URL.");
           }
-
-        } catch (error) {
-          console.error("Failed to load backend stream data from API:", error);
+        } catch (err) {
+          showErr("Playback Initialization Error: " + err.message);
         }
       }
 
-      // Wait until the player core engine is ready before firing the source injection
-      player.addEventListener('provider-change', (event) => {
-        initializePlayback();
+      // Start stream lookup when player provider engine settles
+      player.addEventListener('provider-change', () => {
+        loadStream();
       });
     });
   </script>
